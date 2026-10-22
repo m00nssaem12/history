@@ -104,6 +104,8 @@
   .recapItem{border-left:3px solid var(--bronze); padding:4px 10px; margin-bottom:8px; font-size:12px; line-height:1.7; color:var(--ink-dark);}
   .recapItem b{color:#7a2f16; font-size:13px;}
   #startBtnWrap{margin-top:4px;}
+  .credit{margin-top:14px; font-size:11px; letter-spacing:1px; color:#7a5a30; opacity:.85;}
+  #creditCorner{position:absolute; right:8px; bottom:2px; z-index:19; font-size:9px; color:rgba(241,230,200,.45); pointer-events:none; text-shadow:0 1px 2px #000;}
 
   /* ---------- 장군 컷인 / 도감 ---------- */
   #codexBtnGame{position:absolute; top:1.5px; left:6px; z-index:21; font-family:inherit; font-size:10px; padding:1.5px 9px; border-radius:9px;
@@ -188,6 +190,7 @@
       <div id="gaugeOuter"><div id="gaugeInner"></div></div>
     </div>
     <div id="tooltip" class="hidden"></div>
+    <div id="creditCorner">made by m00m</div>
 
     <!-- General cut-in / foe banner / codex -->
     <div id="foeBanner" class="hidden"></div>
@@ -226,6 +229,7 @@
           <b class="bul">▸</b> 적의 기지 체력을 0으로 만들면 승리!
         </div>
         <div id="startBtnWrap"><button class="pixBtn gold" id="startBtn">게임 시작</button> <button class="pixBtn" id="codexBtnTitle">장군 도감</button></div>
+        <div class="credit">made by m00m</div>
       </div>
     </div>
 
@@ -247,6 +251,7 @@
         <h2 id="endTitle">승리!</h2>
         <div class="sub" id="endSub"></div>
         <div id="recap"></div>
+        <div class="credit" style="text-align:center">made by m00m</div>
         <div class="btnRow"><button class="pixBtn" id="codexBtnEnd">장군 도감</button><button class="pixBtn gold" id="restartBtn">다시 시작</button></div>
       </div>
     </div>
