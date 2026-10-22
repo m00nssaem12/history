@@ -2358,7 +2358,7 @@ const AUDIO = (function(){
   };
   let bgmOn = store.get('warAgesBgm','1')==='1';
   let sfxOn = store.get('warAgesSfx','1')==='1';
-  const BGM_VOL = 0.22, SFX_VOL = 0.55;
+  const BGM_VOL = 0.3, SFX_VOL = 0.55;
 
   function init(){
     if(ctx){ if(ctx.state==='suspended') ctx.resume(); return; }
@@ -2453,67 +2453,101 @@ const AUDIO = (function(){
   }
 
   /* ----- 배경음악: 시대마다 음계·빠르기·악기 구성이 달라지는 반복 곡 ----- */
-  // sc: 오음음계(평조 [0,2,5,7,9] / 계면조 [0,3,5,7,10])
+  // 16분음표 단위로 연주. sc: 계면조 오음음계(어둡고 비장한 느낌)
   const BGM = [
-    {root:45, sc:[0,3,5,7,10], bpm:84},   // 선사: 느리고 묵직한 북소리
-    {root:50, sc:[0,2,5,7,9],  bpm:92},   // 고조선
-    {root:52, sc:[0,3,5,7,10], bpm:100},  // 삼국: 행진 느낌
-    {root:43, sc:[0,2,5,7,9],  bpm:108},  // 고려
-    {root:50, sc:[0,3,5,7,10], bpm:116},  // 조선전기
-    {root:45, sc:[0,3,5,7,10], bpm:126}   // 조선중기: 가장 급박하게
+    {root:45, sc:[0,3,5,7,10], bpm:118},  // 선사: 묵직한 전쟁 북
+    {root:50, sc:[0,3,5,7,10], bpm:126},  // 고조선
+    {root:52, sc:[0,3,5,7,10], bpm:134},  // 삼국: 행진 + 나팔 가세
+    {root:43, sc:[0,3,5,7,10], bpm:142},  // 고려
+    {root:50, sc:[0,3,5,7,10], bpm:150},  // 조선전기
+    {root:45, sc:[0,3,5,7,10], bpm:158}   // 조선중기: 가장 급박하게
   ];
   let bgmEra=-1, bgmWant=-1, timer=null, nextT=0, eighth=0, mel=[];
   function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  // 4마디(마디당 16칸) 멜로디: 한 마디짜리 주제를 반복·변형하다가 마지막 마디에서 내려앉으며 마무리
   function buildMelody(era){
     const c=BGM[era], r=mulberry(era*131+7), notes=[];
     for(let o=0;o<2;o++) for(const d of c.sc) notes.push(c.root+24+o*12+d);
-    let idx=4; const bars=[];
+    const RH = [[0,3,4,6,8,11,12,14],[0,2,4,7,8,10,12,15],[0,3,4,8,10,12,14,15],[0,2,3,6,8,11,12,14]];
+    const rh = RH[era%4];
+    const motif = rh.map(()=>Math.floor(r()*5)+(era%2));
+    const shift = [0,0,2,-1];
+    const bars=[];
     for(let b=0;b<4;b++){
-      const bar=[];
-      for(let s=0;s<8;s++){
-        const p = (s%2===0)?0.85:0.5;
-        if(r()<p){
-          idx += [-2,-1,-1,0,1,1,2][Math.floor(r()*7)];
-          idx = Math.max(0,Math.min(notes.length-1,idx));
-          if(b===3 && s===6) idx=5;
-          bar.push(notes[idx]);
-        } else bar.push(null);
-      }
+      const bar=new Array(16).fill(null);
+      rh.forEach((slot,k)=>{
+        let idx = motif[k] + shift[b];
+        if(b===1 && k>=rh.length-2) idx += 1;
+        if(b===3 && k===rh.length-1) idx = 0;
+        bar[slot] = notes[Math.max(0,Math.min(notes.length-1,idx))];
+      });
       bars.push(bar);
     }
     return bars;
   }
-  function pluck(m,t,d){ // 가야금처럼 뜯는 소리 (살짝 미끄러지며 시작)
+  function lead(m,t,d,i){ // 날카로운 나발·태평소 느낌의 톱니파 (시대가 갈수록 거세짐)
+    const f=mf(m), g=ctx.createGain(), lp=ctx.createBiquadFilter();
+    lp.type='lowpass'; lp.frequency.setValueAtTime(1500+i*260,t); lp.frequency.exponentialRampToValueAtTime(700,t+d);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.2,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    lp.connect(g); g.connect(bgmG);
+    [-7,7].forEach(cents=>{
+      const osc=ctx.createOscillator(); osc.type='sawtooth';
+      osc.frequency.setValueAtTime(f*0.96,t); osc.frequency.setTargetAtTime(f,t,0.015); osc.detune.value=cents;
+      osc.connect(lp); osc.start(t); osc.stop(t+d+0.05);
+    });
+  }
+  function bass(m,t,d){ // 낮고 굵은 저음
     const f=mf(m), osc=ctx.createOscillator(), g=ctx.createGain(), lp=ctx.createBiquadFilter();
-    osc.type='triangle';
-    osc.frequency.setValueAtTime(f*0.95,t); osc.frequency.setTargetAtTime(f,t,0.02);
-    lp.type='lowpass'; lp.frequency.value=2600;
-    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.34,t+0.006); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    osc.type='sawtooth'; osc.frequency.value=f;
+    lp.type='lowpass'; lp.frequency.value=420;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.5,t+0.008); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
     osc.connect(lp); lp.connect(g); g.connect(bgmG); osc.start(t); osc.stop(t+d+0.05);
   }
-  function bass(m,t,d){ tone({f:mf(m),d:d,v:0.42,type:'triangle',a:0.01,when:t,out:bgmG}); }
-  function jang(t,kind){ // 장구: 궁(낮은 북) / 덕(높은 채)
-    if(kind==='low'){ tone({f:125,f2:55,d:0.22,v:0.6,type:'sine',when:t,out:bgmG}); noise({d:0.08,v:0.2,ftype:'lowpass',fq:320,when:t,out:bgmG}); }
-    else { noise({d:0.07,v:0.26,ftype:'bandpass',fq:1900,q:1,when:t,out:bgmG}); tone({f:420,d:0.06,v:0.14,type:'triangle',when:t,out:bgmG}); }
+  function stab(root,t,d){ // 마디 첫머리 나팔 화음 (으뜸음·5도·옥타브)
+    [root+12,root+19,root+24].forEach(m=>{
+      const osc=ctx.createOscillator(), g=ctx.createGain(), lp=ctx.createBiquadFilter();
+      osc.type='square'; osc.frequency.value=mf(m);
+      lp.type='lowpass'; lp.frequency.value=1400;
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.1,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+      osc.connect(lp); lp.connect(g); g.connect(bgmG); osc.start(t); osc.stop(t+d+0.05);
+    });
   }
-  function tick(t){ noise({d:0.03,v:0.08,ftype:'highpass',fq:6000,when:t,out:bgmG}); }
+  function jang(t,kind,vel){ // 큰 북(궁) / 북채(덕)
+    const v=vel||1;
+    if(kind==='low'){ tone({f:130,f2:48,d:0.26,v:0.85*v,type:'sine',when:t,out:bgmG}); noise({d:0.1,v:0.3*v,ftype:'lowpass',fq:380,when:t,out:bgmG}); }
+    else { noise({d:0.09,v:0.34*v,ftype:'bandpass',fq:1700,q:0.9,when:t,out:bgmG}); tone({f:300,f2:200,d:0.08,v:0.18*v,type:'triangle',when:t,out:bgmG}); }
+  }
+  function tick(t){ noise({d:0.03,v:0.1,ftype:'highpass',fq:6500,when:t,out:bgmG}); }
   function scheduleStep(t){
-    const c=BGM[bgmEra], sec=60/c.bpm/2, bar=Math.floor(eighth/8)%4, slot=eighth%8;
-    const m=mel[bar][slot]; if(m!=null) pluck(m,t,sec*2);
-    if(slot===0) bass(c.root,t,sec*3.6);
-    if(slot===4) bass(c.root+7,t,sec*3.6);
-    if(bgmEra>=2 && (slot===2||slot===6)) bass(c.root+12,t,sec*0.9);
-    if(slot===0) jang(t,'low');
-    if(slot===4) jang(t,'high');
-    if(bgmEra>=2 && (slot===2||slot===6)) jang(t,'low');
-    if(bgmEra>=4 && slot%2===1) tick(t);
+    const c=BGM[bgmEra], i=bgmEra, sec=60/c.bpm/4;
+    const bar=Math.floor(eighth/16)%4, slot=eighth%16;
+    // 멜로디
+    const m=mel[bar][slot]; if(m!=null) lead(m,t,sec*(i>=2?2.6:3.2),i);
+    // 저음: 선사는 4분음표, 이후엔 8분음표로 달려요
+    if(i===0){ if(slot%4===0) bass(c.root,t,sec*3.4); }
+    else if(slot%2===0){
+      let n=c.root;
+      if(bar===3 && slot>=8) n = c.root + (slot%4===0 ? 7 : 3);
+      bass(n,t,sec*1.7);
+    }
+    // 북: 네 박마다 큰 북, 2·4박에 북채
+    if(slot%4===0) jang(t,'low', slot===0 ? 1.2 : 1);
+    if(slot===4||slot===12) jang(t,'high', 1);
+    if(i>=1 && (slot===6||slot===14)) jang(t,'low',0.65);   // 말 달리는 듯한 장단
+    if(i>=3 && slot===10) jang(t,'low',0.6);
+    if(i>=2 && bar===3 && slot>=12) jang(t,'high',0.55+(slot-12)*0.2); // 마디 끝 북 연타(돌격!)
+    // 나팔 화음
+    if(i>=2 && slot===0 && bar%2===0) stab(c.root,t,sec*5);
+    // 쌀쌀한 잔박
+    if(i>=3 && slot%2===1) tick(t);
+    if(i>=5 && slot%2===0) tick(t);
     eighth++;
   }
   function tickSched(){
     if(!ctx || !bgmOn || bgmEra<0) return;
     if(ctx.state!=='running') return;
     if(nextT < ctx.currentTime-0.5) nextT = ctx.currentTime+0.05;
-    const sec=60/BGM[bgmEra].bpm/2;
+    const sec=60/BGM[bgmEra].bpm/4;
     while(nextT < ctx.currentTime+0.25){ scheduleStep(nextT); nextT += sec; }
   }
   function startTimer(){ if(!timer) timer = setInterval(tickSched, 50); }
