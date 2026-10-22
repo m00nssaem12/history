@@ -75,7 +75,7 @@
   #gaugeInner{height:100%; width:0%; background:linear-gradient(90deg,#c94a2b,var(--ember-light)); transition:width .15s;}
   #tooltip{position:absolute; z-index:40; pointer-events:none; transform:translate(-50%,-100%);
     background:linear-gradient(180deg,var(--wood-light),var(--wood-dark)); border:2px solid var(--bronze-light); border-radius:4px;
-    padding:6px 9px; font-size:10.5px; line-height:1.6; color:var(--ink); white-space:nowrap; box-shadow:0 4px 10px rgba(0,0,0,.5);}
+    padding:7px 11px; font-size:12px; line-height:1.6; color:var(--ink); white-space:normal; width:max-content; max-width:300px; word-break:keep-all; box-shadow:0 4px 10px rgba(0,0,0,.5);}
   #tooltip b{color:var(--gold);}
 
   /* ---------- Overlays ---------- */
@@ -228,6 +228,7 @@
           <b class="bul">▸</b> 처치 점수를 모으면 시대가 진화하며 더 강한 병사로 바뀝니다<br>
           <b class="bul">▸</b> 적의 기지 체력을 0으로 만들면 승리!
         </div>
+        <div id="diffWrap" style="margin:6px 0 10px;font-size:13px;">난이도: <button class="pixBtn diffBtn" data-diff="easy">쉬움</button> <button class="pixBtn diffBtn" data-diff="normal">보통</button> <button class="pixBtn diffBtn" data-diff="hard">어려움</button></div>
         <div id="startBtnWrap"><button class="pixBtn gold" id="startBtn">게임 시작</button> <button class="pixBtn" id="codexBtnTitle">장군 도감</button></div>
         <div class="credit">made by m00m</div>
       </div>
@@ -554,6 +555,14 @@ function enemyMod(eraIdx, typeKey){
 const THRESHOLDS = [0,150,380,650,960,1320];
 const TYPE_KEYS = ['melee','ranged','siege'];
 const BASE_MAX_HP = 1200;
+const DIFFICULTIES = {
+  easy:   { label:'쉬움',   income:0.75, interval:1.35, stat:0.85, baseHp:0.8 },
+  normal: { label:'보통',   income:1,    interval:1,    stat:1,    baseHp:1 },
+  hard:   { label:'어려움', income:1.3,  interval:0.75, stat:1.2,  baseHp:1.35 }
+};
+let difficulty = 'normal';
+try{ const d=localStorage.getItem('kw_diff'); if(DIFFICULTIES[d]) difficulty=d; }catch(e){}
+const DIFF = ()=>DIFFICULTIES[difficulty];
 
 /* ======================= STATE ======================= */
 let state = null;
@@ -580,14 +589,14 @@ function freshState(){
     t:0, lastTs:0,
     player:{ era:0, gold:60, score:0, gauge:0, hp:BASE_MAX_HP, maxHp:BASE_MAX_HP, queue:[], upgradeLevel:0,
       turretPlaced:[false,false,false,false], turretCds:[0,0,0,0], evolveReady:false },
-    enemy:{ era:0, gold:60, score:0, gauge:0, hp:BASE_MAX_HP, maxHp:BASE_MAX_HP, spawnCd:1.2, queue:[],
+    enemy:{ era:0, gold:60, score:0, gauge:0, hp:Math.round(BASE_MAX_HP*DIFF().baseHp), maxHp:Math.round(BASE_MAX_HP*DIFF().baseHp), spawnCd:1.2, queue:[],
       turretPlaced:[false,false,false,false], turretCds:[0,0,0,0] },
     units:[], projectiles:[], particles:[], floatingTexts:[]
   };
 }
 function upgradeCost(level){ return Math.round(UPGRADE_BASE_COST * Math.pow(UPGRADE_COST_MULT, level)); }
 function playerIncomeRate(p){ return BASE_INCOME + p.era*ERA_INCOME_BONUS + p.upgradeLevel*UPGRADE_INCOME_STEP; }
-function enemyIncomeRate(e, t){ return 0.9 + e.era*0.28 + Math.min(t/60, 1.3); }
+function enemyIncomeRate(e, t){ return (0.9 + e.era*0.28 + Math.min(t/60, 1.3)) * DIFF().income; }
 let uidc=1;
 
 /* ======================= DOM refs ======================= */
@@ -608,7 +617,10 @@ function showTooltip(el, html){
   const sc = stageRect.width / W;
   const x = (r.left + r.width/2 - stageRect.left) / sc;
   const y = (r.top - stageRect.top) / sc - 6;
-  tooltip.style.left = x+'px';
+  // 맨 왼쪽/오른쪽 버튼에서도 설명창이 화면 밖으로 나가지 않도록 좌우 위치를 제한
+  const tw = tooltip.offsetWidth || 220, pad = 8;
+  const cx = Math.max(tw/2 + pad, Math.min(W - tw/2 - pad, x));
+  tooltip.style.left = cx+'px';
   tooltip.style.top = y+'px';
 }
 function hideTooltip(){ tooltip.classList.add('hidden'); }
@@ -760,6 +772,7 @@ function spawnUnit(side, typeKey, era){
   // 앞뒤 깊이를 약간 다르게 해서 유닛이 한 점에 완전히 겹쳐 보이지 않게 함 (y 정렬로 앞뒤 구분)
   const jitter = Math.random()*14;
   const em = side==='enemy' ? enemyMod(era, typeKey) : {hp:1,atk:1,spd:1,range:1};
+  if(side==='enemy'){ const k=DIFF().stat; em.hp*=k; em.atk*=k; }
   if(side==='player') sfx('spawn');
   state.units.push({
     id: uidc++,
@@ -883,7 +896,7 @@ function enemyAI(dt){
   e.spawnCd -= dt;
   if(e.spawnCd<=0){
     const em = ENEMY_MODS[e.era] || {mix:[0.45,0.35,0.2], interval:1, cost:1};
-    e.spawnCd = (1.1 + Math.random()*0.9) * em.interval;
+    e.spawnCd = (1.1 + Math.random()*0.9) * em.interval * DIFF().interval;
     const era = ERAS[e.era];
     const order = Math.random();
     let key = order<em.mix[0] ? 'melee' : (order<em.mix[0]+em.mix[1] ? 'ranged' : 'siege');
@@ -899,10 +912,11 @@ function enemyAI(dt){
 }
 
 /* ======================= COMBAT ======================= */
-function nearestEnemyUnit(u){
+function nearestEnemyUnit(u, aheadOnly){
   let best=null, bestD=Infinity;
   for(const o of state.units){
     if(o.dead || o.side===u.side) continue;
+    if(aheadOnly && (o.x-u.x)*u.dir < -8) continue;
     const d = Math.abs(o.x-u.x);
     if(d<bestD){ bestD=d; best=o; }
   }
@@ -967,12 +981,16 @@ function updateUnits(dt){
   for(const u of state.units){
     if(u.dead) continue;
     if(u.hitFlash>0) u.hitFlash-=dt;
-    const target = nearestEnemyUnit(u);
+    // 내 뒤(이미 지나친 쪽)에 있는 유닛은 목표로 삼지 않는다 — 그러면 기지를 지나쳐 계속 걸어가던 버그가 생김
+    let target = nearestEnemyUnit(u, true);
     let targetIsBase=false, dx=0;
-    if(target){
+    const baseX = u.side==='player' ? W-BASE_MARGIN : BASE_MARGIN;
+    const baseDist = Math.abs(baseX-u.x);
+    // 적 유닛이 없거나, 기지가 더 가까우면 기지가 목표 (기지 앞에 멈춰서 계속 공격)
+    if(target && Math.abs(target.x-u.x) <= baseDist){
       dx = target.x-u.x;
     } else {
-      const baseX = u.side==='player' ? W-BASE_MARGIN : BASE_MARGIN;
+      target = null;
       dx = baseX-u.x;
       targetIsBase=true;
     }
@@ -2602,6 +2620,19 @@ function bgmEraSet(i){ try{ AUDIO.bgmSetEra(i); }catch(e){} }
   });
 })();
 
+function syncDiffBtns(){
+  document.querySelectorAll('.diffBtn').forEach(b=>{
+    const on = b.dataset.diff===difficulty;
+    b.classList.toggle('gold', on);
+    b.style.opacity = on ? '1' : '0.7';
+  });
+}
+document.querySelectorAll('.diffBtn').forEach(b=>b.addEventListener('click',()=>{
+  difficulty=b.dataset.diff;
+  try{ localStorage.setItem('kw_diff',difficulty); }catch(e){}
+  syncDiffBtns();
+}));
+syncDiffBtns();
 $('startBtn').addEventListener('click', startGame);
 $('restartBtn').addEventListener('click', startGame);
 
