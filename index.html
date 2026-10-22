@@ -108,6 +108,10 @@
   /* ---------- 장군 컷인 / 도감 ---------- */
   #codexBtnGame{position:absolute; top:1.5px; left:6px; z-index:21; font-family:inherit; font-size:10px; padding:1.5px 9px; border-radius:9px;
     background:linear-gradient(180deg,#c39a3f,#8a5f1a); border:1.5px solid var(--gold); color:#2a1c0f; cursor:pointer;}
+  .sndBtn{position:absolute; top:1.5px; z-index:21; font-family:inherit; font-size:10px; padding:1.5px 8px; border-radius:9px; cursor:pointer;
+    background:linear-gradient(180deg,var(--wood-light),var(--wood-dark)); border:1.5px solid var(--bronze); color:var(--gold);}
+  .sndBtn.off{opacity:.45; text-decoration:line-through;}
+  #bgmBtn{left:84px;} #sfxBtn{left:140px;}
   #cutin{position:absolute; inset:0; z-index:95; background:rgba(6,3,1,.55); cursor:pointer; overflow:hidden;}
   #cutBand{position:absolute; left:0; right:0; top:150px; height:210px; display:flex; align-items:center; gap:26px; padding:0 70px;
     background:linear-gradient(90deg, rgba(20,10,4,.96) 0%, rgba(60,28,12,.95) 55%, rgba(20,10,4,.9) 100%);
@@ -152,7 +156,7 @@
     <canvas id="c" width="1400" height="560"></canvas>
     <div id="scanlines"></div><div id="vignette"></div>
 
-    <div id="topStrip"><div id="topStripFill"></div><div id="topStripLabel"><span id="eraNameTxt">선사시대</span></div><button id="evolveBtn" class="hidden">진화!</button><button id="codexBtnGame">장군 도감</button></div>
+    <div id="topStrip"><div id="topStripFill"></div><div id="topStripLabel"><span id="eraNameTxt">선사시대</span></div><button id="evolveBtn" class="hidden">진화!</button><button id="codexBtnGame">장군 도감</button><button id="bgmBtn" class="sndBtn">♪ 음악</button><button id="sfxBtn" class="sndBtn">효과음</button></div>
     <div id="goldPill">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#d9b45a" stroke="#7a5a26" stroke-width="1.5"/><rect x="8.5" y="8.5" width="7" height="7" fill="#2a1c0f"/></svg>
       <span class="gtext"><span id="goldTxt">0</span><span class="income">+<span id="incomeTxt">0</span>/초</span></span>
@@ -751,6 +755,7 @@ function spawnUnit(side, typeKey, era){
   // 앞뒤 깊이를 약간 다르게 해서 유닛이 한 점에 완전히 겹쳐 보이지 않게 함 (y 정렬로 앞뒤 구분)
   const jitter = Math.random()*14;
   const em = side==='enemy' ? enemyMod(era, typeKey) : {hp:1,atk:1,spd:1,range:1};
+  if(side==='player') sfx('spawn');
   state.units.push({
     id: uidc++,
     side, typeKey, era,
@@ -771,6 +776,7 @@ function trySpawn(typeKey){
   if(state.player.queue.length >= QUEUE_MAX) return;
   state.player.gold -= cost;
   state.player.queue.push({ key:typeKey, t:TRAIN_TIME[typeKey], tMax:TRAIN_TIME[typeKey] });
+  sfx('ui');
   refreshUnitButtons();
   refreshQueueUI();
 }
@@ -818,6 +824,7 @@ function tryUpgrade(){
   if(state.player.gold < cost) return;
   state.player.gold -= cost;
   state.player.upgradeLevel++;
+  sfx('buy');
   syncUI();
 }
 upgradeBtn.addEventListener('click', tryUpgrade);
@@ -831,6 +838,7 @@ function tryTurretUpgrade(){
   if(p.gold < cost) return;
   p.gold -= cost;
   p.turretPlaced[filled] = true;
+  sfx('buy');
   state.enemy.turretPlaced[filled] = true; // 상대 기지도 같은 수만큼 포탑을 갖춰 공정하게 유지
   syncUI();
 }
@@ -853,6 +861,7 @@ function updateSideTurret(g, side, dt){
     if(!best) continue;
     g.turretCds[i] = stats.cd;
     const off = TURRET_SLOT_OFFSETS[i];
+    sfx('turret', side==='player' ? 1 : 0.7);
     state.projectiles.push({
       x:baseX+dir*off.dx, y:GROUND_Y+off.dy, side, dmg:stats.dmg,
       tx:null, targetUnit:best.id, targetIsBase:false, speed:400, born:0
@@ -915,10 +924,12 @@ function spawnHitSpark(x,y,color){
 function dealDamageToUnit(target, dmg){
   target.hp -= dmg;
   target.hitFlash = 0.15;
+  sfx('hit', target.side==='enemy' ? 1 : 0.8);
   spawnHitSpark(target.x, target.y-16, '#fff2c4');
   spawnFloatingText(target.x, target.y-24, '-'+Math.round(dmg), target.side==='player'?'#bfe4ff':'#ffc9c9');
   if(target.hp<=0 && !target.dead){
     target.dead = true;
+    sfx('death');
     if(target.side==='enemy'){ state.player.score += 15; }
     else { state.enemy.score += 15; }
     spawnParticles(target.x, target.y-10, target.side==='player'?'#5ac8ff':'#ff6b6b', 10);
@@ -927,6 +938,7 @@ function dealDamageToUnit(target, dmg){
 function dealDamageToBase(side, dmg){
   const g = side==='player' ? state.enemy : state.player;
   g.hp = Math.max(0, g.hp-dmg);
+  sfx('baseHit');
   const bx = side==='player' ? W-BASE_MARGIN : BASE_MARGIN;
   spawnFloatingText(bx, GROUND_Y-140, '-'+Math.round(dmg), '#ffd9a0');
 }
@@ -976,6 +988,7 @@ function updateUnits(dt){
             targetIsBase, speed: 320, born:0
           });
           spawnHitSpark(u.x+u.dir*10, u.y-18, ERAS[u.era].accent);
+          sfx(u.era>=3 ? 'gun' : 'bow', u.side==='player' ? 1 : 0.7);
         } else {
           if(targetIsBase){ dealDamageToBase(u.side, u.atk); landHit(u,u.atk,true); spawnParticles(u.x+u.dir*20,u.y-16,'#ffcf6b',4);}
           else { dealDamageToUnit(target, u.atk); landHit(u,u.atk,false); }
@@ -1035,6 +1048,7 @@ function triggerSpecial(side){
   const g = side==='player'?state.player:state.enemy;
   if(g.gauge<100) return;
   g.gauge=0;
+  sfx('special');
   const era = ERAS[g.era];
   const targetSide = side==='player'?'enemy':'player';
   for(const u of state.units){
@@ -1078,6 +1092,7 @@ evolveBtn.addEventListener('click', ()=>{
   if(!state || !state.player.evolveReady) return;
   const nextIdx = state.player.era+1;
   state.paused = true;
+  sfx('evolve');
   eoMode = 'transition';
   fillEraCard(nextIdx, false);
   eraOverlay.classList.remove('hidden');
@@ -1092,6 +1107,7 @@ $('eoBtn').addEventListener('click', ()=>{
   state.player.era = nextIdx;
   state.enemy.era = nextIdx;
   unlockEra(nextIdx);
+  bgmEraSet(nextIdx);
   state.player.evolveReady = false;
   evolveBtn.classList.add('hidden');
   state.player.hp = Math.min(state.player.maxHp, state.player.hp+100);
@@ -1105,6 +1121,8 @@ $('eoBtn').addEventListener('click', ()=>{
 /* ======================= GAME OVER ======================= */
 function endGame(win){
   state.over = true; state.running=false;
+  try{ AUDIO.bgmStop(); }catch(e){}
+  sfx(win ? 'win' : 'lose');
   $('endTitle').textContent = win ? '승리! 적 기지를 함락시켰습니다' : '패배... 기지가 함락되었습니다';
   $('endSub').textContent = win ? `최종 도달 시대: ${ERAS[state.player.era].name}` : `도달 시대: ${ERAS[state.player.era].name} — 다시 도전해보세요!`;
   const recap = $('recap');
@@ -2164,6 +2182,7 @@ function startGame(){
   eoMode='start';
   hideCutinNow();
   unlockEra(0);
+  try{ AUDIO.bgmStart(0); }catch(e){}
   fillEraCard(0, true);
   eraOverlay.classList.remove('hidden');
   syncUI();
@@ -2268,6 +2287,7 @@ function showGeneralCutin(side, eraIdx){
     cutinEl.classList.remove('foe');
     cutinEl.classList.remove('hidden');
     const band = $('cutBand'); band.style.animation='none'; void band.offsetWidth; band.style.animation='';
+    sfx('gong');
     cutinActive = true; state.paused = true;
     clearTimeout(cutTimer); cutTimer = setTimeout(closeCutin, 4200);
   } else {
@@ -2328,6 +2348,220 @@ $('codexBtnGame').addEventListener('click', openCodex);
 $('codexBtnTitle').addEventListener('click', openCodex);
 $('codexBtnEnd').addEventListener('click', openCodex);
 $('codexClose').addEventListener('click', closeCodex);
+
+/* ======================= 사운드 (Web Audio로 직접 합성 · 외부 음원 파일 없음) ======================= */
+const AUDIO = (function(){
+  let ctx=null, bgmG=null, sfxG=null, noiseBuf=null;
+  const store = {
+    get(k,d){ try{ const v=localStorage.getItem(k); return v===null?d:v; }catch(e){ return d; } },
+    set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+  };
+  let bgmOn = store.get('warAgesBgm','1')==='1';
+  let sfxOn = store.get('warAgesSfx','1')==='1';
+  const BGM_VOL = 0.22, SFX_VOL = 0.55;
+
+  function init(){
+    if(ctx){ if(ctx.state==='suspended') ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    ctx = new AC();
+    const master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+    bgmG = ctx.createGain(); bgmG.gain.value = bgmOn?BGM_VOL:0; bgmG.connect(master);
+    sfxG = ctx.createGain(); sfxG.gain.value = sfxOn?SFX_VOL:0; sfxG.connect(master);
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const ch = noiseBuf.getChannelData(0);
+    for(let i=0;i<ch.length;i++) ch[i] = Math.random()*2-1;
+  }
+
+  /* ----- 기본 소리 재료 ----- */
+  function tone(o){
+    const t0 = o.when!==undefined ? o.when : ctx.currentTime;
+    const osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.type = o.type || 'square';
+    osc.frequency.setValueAtTime(o.f, t0);
+    if(o.f2) osc.frequency.exponentialRampToValueAtTime(Math.max(20,o.f2), t0+o.d);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002,o.v||0.3), t0+(o.a||0.005));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+o.d);
+    let node = osc;
+    if(o.lp){ const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=o.lp; osc.connect(f); node=f; }
+    node.connect(g); g.connect(o.out||sfxG);
+    osc.start(t0); osc.stop(t0+o.d+0.05);
+  }
+  function noise(o){
+    const t0 = o.when!==undefined ? o.when : ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf;
+    src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = o.ftype||'lowpass'; f.frequency.setValueAtTime(o.fq||1500, t0);
+    if(o.fq2) f.frequency.exponentialRampToValueAtTime(o.fq2, t0+o.d);
+    if(o.q) f.Q.value = o.q;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002,o.v||0.3), t0+(o.a||0.004));
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+o.d);
+    src.connect(f); f.connect(g); g.connect(o.out||sfxG);
+    src.start(t0, Math.random()*0.5); src.stop(t0+o.d+0.05);
+  }
+  const mf = m => 440*Math.pow(2,(m-69)/12);
+
+  /* ----- 효과음 ----- */
+  const GAP = { hit:0.05, death:0.09, bow:0.07, gun:0.08, turret:0.1, spawn:0.08, baseHit:0.12, ui:0.04, buy:0.05 };
+  const lastAt = {};
+  const FX = {
+    ui(v){ tone({f:660,f2:880,d:0.07,v:0.16*v,type:'square'}); },
+    buy(v){ tone({f:988,d:0.08,v:0.16*v,type:'square'}); tone({f:1319,d:0.14,v:0.16*v,type:'square',when:ctx.currentTime+0.07}); },
+    spawn(v){ tone({f:330,f2:495,d:0.14,v:0.22*v,type:'triangle'}); },
+    hit(v){ noise({d:0.07,v:0.28*v,ftype:'bandpass',fq:900,q:1.2}); tone({f:190,f2:90,d:0.07,v:0.18*v,type:'square'}); },
+    death(v){ tone({f:320,f2:70,d:0.26,v:0.2*v,type:'sawtooth',lp:1400}); },
+    bow(v){ noise({d:0.13,v:0.16*v,ftype:'bandpass',fq:2600,fq2:900,q:0.8}); tone({f:900,f2:420,d:0.09,v:0.05*v,type:'triangle'}); },
+    gun(v){ noise({d:0.16,v:0.38*v,ftype:'lowpass',fq:3200,fq2:300}); tone({f:130,f2:45,d:0.18,v:0.3*v,type:'sine'}); },
+    turret(v){ tone({f:520,f2:180,d:0.12,v:0.16*v,type:'sawtooth',lp:1800}); noise({d:0.08,v:0.12*v,ftype:'highpass',fq:2500}); },
+    baseHit(v){ noise({d:0.3,v:0.45*v,ftype:'lowpass',fq:500,fq2:120}); tone({f:95,f2:38,d:0.34,v:0.45*v,type:'sine'}); },
+    special(v){
+      const t=ctx.currentTime;
+      tone({f:180,f2:1300,d:0.5,v:0.2*v,type:'sawtooth',lp:3000});
+      noise({d:0.55,v:0.3*v,ftype:'bandpass',fq:600,fq2:3000,q:0.6});
+      noise({d:0.7,v:0.5*v,ftype:'lowpass',fq:700,fq2:90,when:t+0.5});
+      tone({f:80,f2:30,d:0.7,v:0.5*v,type:'sine',when:t+0.5});
+    },
+    gong(v){
+      const t=ctx.currentTime;
+      [[196,0.32],[293.7,0.2],[394,0.14],[587,0.09]].forEach(p=>tone({f:p[0],d:2.2,v:p[1]*v,type:'sine',a:0.01,when:t}));
+      noise({d:0.25,v:0.18*v,ftype:'bandpass',fq:1200,q:0.7});
+    },
+    evolve(v){
+      const t=ctx.currentTime;
+      [60,64,67,72,76].forEach((m,i)=>tone({f:mf(m),d:0.28,v:0.2*v,type:'triangle',when:t+i*0.09}));
+    },
+    win(v){
+      const t=ctx.currentTime;
+      [[60,0],[64,0.14],[67,0.28],[72,0.42],[67,0.62],[72,0.76]].forEach(p=>tone({f:mf(p[0]),d:p[0]===72&&p[1]>0.7?0.9:0.3,v:0.24*v,type:'square',lp:2600,when:t+p[1]}));
+    },
+    lose(v){
+      const t=ctx.currentTime;
+      [[64,0],[62,0.3],[59,0.6],[52,0.95]].forEach(p=>tone({f:mf(p[0]),d:0.5,v:0.24*v,type:'triangle',when:t+p[1]}));
+    }
+  };
+  function sfx(name, vol){
+    if(!ctx || !sfxOn || !FX[name]) return;
+    if(ctx.state!=='running') return;
+    const now = ctx.currentTime;
+    const gap = GAP[name]||0;
+    if(gap && lastAt[name] && now-lastAt[name] < gap) return;
+    lastAt[name] = now;
+    try{ FX[name](vol===undefined?1:vol); }catch(e){}
+  }
+
+  /* ----- 배경음악: 시대마다 음계·빠르기·악기 구성이 달라지는 반복 곡 ----- */
+  // sc: 오음음계(평조 [0,2,5,7,9] / 계면조 [0,3,5,7,10])
+  const BGM = [
+    {root:45, sc:[0,3,5,7,10], bpm:84},   // 선사: 느리고 묵직한 북소리
+    {root:50, sc:[0,2,5,7,9],  bpm:92},   // 고조선
+    {root:52, sc:[0,3,5,7,10], bpm:100},  // 삼국: 행진 느낌
+    {root:43, sc:[0,2,5,7,9],  bpm:108},  // 고려
+    {root:50, sc:[0,3,5,7,10], bpm:116},  // 조선전기
+    {root:45, sc:[0,3,5,7,10], bpm:126}   // 조선중기: 가장 급박하게
+  ];
+  let bgmEra=-1, bgmWant=-1, timer=null, nextT=0, eighth=0, mel=[];
+  function mulberry(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  function buildMelody(era){
+    const c=BGM[era], r=mulberry(era*131+7), notes=[];
+    for(let o=0;o<2;o++) for(const d of c.sc) notes.push(c.root+24+o*12+d);
+    let idx=4; const bars=[];
+    for(let b=0;b<4;b++){
+      const bar=[];
+      for(let s=0;s<8;s++){
+        const p = (s%2===0)?0.85:0.5;
+        if(r()<p){
+          idx += [-2,-1,-1,0,1,1,2][Math.floor(r()*7)];
+          idx = Math.max(0,Math.min(notes.length-1,idx));
+          if(b===3 && s===6) idx=5;
+          bar.push(notes[idx]);
+        } else bar.push(null);
+      }
+      bars.push(bar);
+    }
+    return bars;
+  }
+  function pluck(m,t,d){ // 가야금처럼 뜯는 소리 (살짝 미끄러지며 시작)
+    const f=mf(m), osc=ctx.createOscillator(), g=ctx.createGain(), lp=ctx.createBiquadFilter();
+    osc.type='triangle';
+    osc.frequency.setValueAtTime(f*0.95,t); osc.frequency.setTargetAtTime(f,t,0.02);
+    lp.type='lowpass'; lp.frequency.value=2600;
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.34,t+0.006); g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    osc.connect(lp); lp.connect(g); g.connect(bgmG); osc.start(t); osc.stop(t+d+0.05);
+  }
+  function bass(m,t,d){ tone({f:mf(m),d:d,v:0.42,type:'triangle',a:0.01,when:t,out:bgmG}); }
+  function jang(t,kind){ // 장구: 궁(낮은 북) / 덕(높은 채)
+    if(kind==='low'){ tone({f:125,f2:55,d:0.22,v:0.6,type:'sine',when:t,out:bgmG}); noise({d:0.08,v:0.2,ftype:'lowpass',fq:320,when:t,out:bgmG}); }
+    else { noise({d:0.07,v:0.26,ftype:'bandpass',fq:1900,q:1,when:t,out:bgmG}); tone({f:420,d:0.06,v:0.14,type:'triangle',when:t,out:bgmG}); }
+  }
+  function tick(t){ noise({d:0.03,v:0.08,ftype:'highpass',fq:6000,when:t,out:bgmG}); }
+  function scheduleStep(t){
+    const c=BGM[bgmEra], sec=60/c.bpm/2, bar=Math.floor(eighth/8)%4, slot=eighth%8;
+    const m=mel[bar][slot]; if(m!=null) pluck(m,t,sec*2);
+    if(slot===0) bass(c.root,t,sec*3.6);
+    if(slot===4) bass(c.root+7,t,sec*3.6);
+    if(bgmEra>=2 && (slot===2||slot===6)) bass(c.root+12,t,sec*0.9);
+    if(slot===0) jang(t,'low');
+    if(slot===4) jang(t,'high');
+    if(bgmEra>=2 && (slot===2||slot===6)) jang(t,'low');
+    if(bgmEra>=4 && slot%2===1) tick(t);
+    eighth++;
+  }
+  function tickSched(){
+    if(!ctx || !bgmOn || bgmEra<0) return;
+    if(ctx.state!=='running') return;
+    if(nextT < ctx.currentTime-0.5) nextT = ctx.currentTime+0.05;
+    const sec=60/BGM[bgmEra].bpm/2;
+    while(nextT < ctx.currentTime+0.25){ scheduleStep(nextT); nextT += sec; }
+  }
+  function startTimer(){ if(!timer) timer = setInterval(tickSched, 50); }
+  function bgmSetEra(era){
+    bgmWant = era;
+    if(!ctx) return;
+    if(era===bgmEra && timer) return;
+    bgmEra = era; mel = buildMelody(era); eighth = 0; nextT = ctx.currentTime+0.08;
+    if(bgmOn) startTimer();
+  }
+  function bgmStart(era){ init(); bgmSetEra(era); }
+  function bgmStop(){ bgmWant=-1; bgmEra=-1; if(timer){ clearInterval(timer); timer=null; } }
+  function setToggle(kind){
+    if(kind==='bgm'){
+      bgmOn=!bgmOn; store.set('warAgesBgm', bgmOn?'1':'0');
+      if(bgmG) bgmG.gain.setTargetAtTime(bgmOn?BGM_VOL:0, ctx.currentTime, 0.05);
+      if(bgmOn && bgmWant>=0){ bgmEra=-1; bgmSetEra(bgmWant); }
+      if(!bgmOn && timer){ clearInterval(timer); timer=null; bgmEra=-1; }
+    } else {
+      sfxOn=!sfxOn; store.set('warAgesSfx', sfxOn?'1':'0');
+      if(sfxG) sfxG.gain.setTargetAtTime(sfxOn?SFX_VOL:0, ctx.currentTime, 0.02);
+    }
+  }
+  document.addEventListener('visibilitychange', ()=>{
+    if(!ctx) return;
+    if(document.hidden) ctx.suspend(); else ctx.resume();
+  });
+  return { init, sfx, bgmStart, bgmSetEra, bgmStop,
+    toggle:setToggle, get bgmOn(){return bgmOn;}, get sfxOn(){return sfxOn;} };
+})();
+function sfx(name, vol){ try{ AUDIO.sfx(name, vol); }catch(e){} }
+function bgmEraSet(i){ try{ AUDIO.bgmSetEra(i); }catch(e){} }
+(function wireAudioUI(){
+  const bgmBtn=$('bgmBtn'), sfxBtn=$('sfxBtn');
+  function refresh(){ bgmBtn.classList.toggle('off', !AUDIO.bgmOn); sfxBtn.classList.toggle('off', !AUDIO.sfxOn); }
+  bgmBtn.addEventListener('click', ()=>{ AUDIO.init(); AUDIO.toggle('bgm'); refresh(); });
+  sfxBtn.addEventListener('click', ()=>{ AUDIO.init(); AUDIO.toggle('sfx'); refresh(); sfx('ui'); });
+  refresh();
+  // 브라우저는 사용자가 한 번 누른 뒤에야 소리를 허용하므로, 첫 클릭/터치에서 오디오를 켠다
+  const unlock = ()=>{ try{ AUDIO.init(); }catch(e){} };
+  document.addEventListener('pointerdown', unlock, {capture:true});
+  document.addEventListener('keydown', unlock, {capture:true});
+  // 공통 버튼 클릭음
+  document.addEventListener('click', e=>{
+    const el = e.target.closest && e.target.closest('.pixBtn, .cxTab, #evolveBtn, #codexBtnGame');
+    if(el && el.id!=='startBtn' && el.id!=='restartBtn') sfx('ui');
+  });
+})();
 
 $('startBtn').addEventListener('click', startGame);
 $('restartBtn').addEventListener('click', startGame);
